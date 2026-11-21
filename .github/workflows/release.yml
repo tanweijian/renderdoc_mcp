@@ -27,7 +27,6 @@ jobs:
           archive_name="renderdoc_mcp-${TAG_NAME//\//-}"
           git archive \
             --format=zip \
-            --prefix="${archive_name}/" \
             --output="${archive_name}.zip" \
             "${TAG_NAME}"
           echo "ARCHIVE_NAME=${archive_name}" >> "${GITHUB_ENV}"
