@@ -1,6 +1,10 @@
 """Local MCP server extension for RenderDoc."""
 
 import atexit
+import json
+import tempfile
+from contextlib import suppress
+from pathlib import Path
 
 from .mcp_server import ExtensionService
 import qrenderdoc as qrd
@@ -98,6 +102,64 @@ def _stop(context, data):
         _service.stop()
 
 
+def _settings_path():
+    return Path(qrd.ConfigFilePath("renderdoc_mcp.json"))
+
+
+def _load_settings(path):
+    try:
+        with path.open(encoding="utf-8") as source:
+            settings = json.load(source)
+        if not isinstance(settings, dict):
+            raise ValueError("Expected a JSON object.")
+        return settings
+    except FileNotFoundError:
+        return {}
+    except ValueError as error:
+        print("RenderDoc MCP could not read settings from {}: {}".format(path, error))
+        return {}
+
+
+def _save_settings(path, settings):
+    temporary = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".",
+        suffix=".tmp", delete=False,
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            json.dump(settings, temporary, indent=2)
+            temporary.write("\n")
+        temporary_path.replace(path)
+    finally:
+        with suppress(OSError):
+            temporary_path.unlink()
+
+
+def _configure_auto_start(context, data):
+    manager = context.Extensions()
+    title = "RenderDoc MCP Auto Start"
+    path = _settings_path()
+    try:
+        settings = _load_settings(path)
+        state = "on" if settings.get("auto_start") is True else "off"
+        buttons = qrd.DialogButton
+        prompt = (
+            "Start the MCP service automatically when RenderDoc opens?\n\n"
+            "Auto Start is currently {}. Changes apply the next time the extension loads."
+        ).format(state)
+        choice = manager.QuestionDialog(
+            prompt,
+            [buttons.Yes, buttons.No, buttons.Cancel],
+            title,
+        )
+        if choice in (buttons.Yes, buttons.No):
+            settings["auto_start"] = choice == buttons.Yes
+            _save_settings(path, settings)
+    except OSError as error:
+        manager.ErrorDialog("Could not update Auto Start.\n\n{}".format(error), title)
+
+
 def register(version, pyrenderdoc):
     global _service
     _service = ExtensionService(pyrenderdoc, _update_status)
@@ -113,8 +175,22 @@ def register(version, pyrenderdoc):
         ["RenderDoc MCP", "Stop"],
         _stop,
     )
+    manager.RegisterWindowMenu(
+        qrd.WindowMenu.Tools,
+        ["RenderDoc MCP", "Auto Start..."],
+        _configure_auto_start,
+    )
 
-    print("RenderDoc MCP loaded. Use Tools > RenderDoc MCP > Start.")
+    try:
+        auto_start = _load_settings(_settings_path()).get("auto_start") is True
+    except OSError as error:
+        print("RenderDoc MCP could not check Auto Start: {}".format(error))
+        auto_start = False
+
+    if auto_start:
+        _start(pyrenderdoc, None)
+    else:
+        print("RenderDoc MCP loaded. Use Tools > RenderDoc MCP > Start.")
 
 
 def unregister():
