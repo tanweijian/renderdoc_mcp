@@ -21,11 +21,13 @@ http://127.0.0.1:8765/mcp
 
 Configure an MCP client to use that URL as a Streamable HTTP server. No external Python installation, package manager, or stdio process is required.
 
-To start MCP automatically when RenderDoc opens, check **Enabled** for RenderDoc MCP in **Tools → Manage Extensions**, then select **Tools → RenderDoc MCP → Auto Start... → Yes**. The setting defaults to off and applies the next time the extension loads.
+To start MCP automatically when RenderDoc opens, check **Enabled** for RenderDoc MCP in **Tools → Manage Extensions**, then select **Tools → RenderDoc MCP → Auto Start → On**. The setting defaults to off and applies the next time the extension loads.
 
 The extension stores `auto_start` as a boolean in `renderdoc_mcp.json` in RenderDoc's user configuration directory (`%APPDATA%\qrenderdoc` on Windows).
 
-Use **Stop** to stop the service for the current session. Select **No** in the Auto Start dialog to disable future automatic starts.
+Select **Auto Start → Off** to disable future automatic starts without stopping the current service. Use **Stop** to stop the service for the current session without changing Auto Start.
+
+When RenderDoc has PySide2 support, the entry that matches the saved setting is grayed out: only **On** is selectable when Auto Start is off, and only **Off** is selectable when it is on.
 
 The RenderDoc status bar shows a green dot while MCP is running and a red dot while it is stopped or failed to start. The tooltip on the dot shows the active endpoint or failure state. Unloading the extension or exiting RenderDoc stops the HTTP server and closes its listening socket.
 

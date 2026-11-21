@@ -24,6 +24,11 @@ _status_widget = None
 _status_label = None
 _atexit_registered = globals().get("_atexit_registered", False)
 
+_MENU_NAME = "RenderDoc MCP"
+_AUTO_START_MENU = "Auto Start"
+_AUTO_START_ON = "&On"
+_AUTO_START_OFF = "O&ff"
+
 
 def _update_status(state, endpoint):
     if _status_label is None:
@@ -136,28 +141,54 @@ def _save_settings(path, settings):
             temporary_path.unlink()
 
 
-def _configure_auto_start(context, data):
+def _update_auto_start_menu(context, enabled):
+    # RegisterWindowMenu does not expose action state. Keep both commands usable
+    # if RenderDoc was built without PySide2 or its menus cannot be accessed.
+    if QtWidgets is None:
+        return
+    try:
+        widget = context.GetMainWindow().Widget()
+        tools = widget.findChild(QtWidgets.QMenu, "menu_Tools")
+        # Keep the parent QAction wrappers alive while using their submenus.
+        # PySide2 can invalidate menu() wrappers when the QAction is collected.
+        mcp_action = next(action for action in tools.actions() if action.text() == _MENU_NAME)
+        auto_start_action = next(
+            action for action in mcp_action.menu().actions() if action.text() == _AUTO_START_MENU
+        )
+        actions = {action.text(): action for action in auto_start_action.menu().actions()}
+        on, off = actions[_AUTO_START_ON], actions[_AUTO_START_OFF]
+        on.setEnabled(not enabled)
+        off.setEnabled(enabled)
+    except (AttributeError, KeyError, RuntimeError, StopIteration, TypeError) as error:
+        print("RenderDoc MCP could not update Auto Start menu: {!r}".format(error))
+
+
+def _set_auto_start(context, enabled):
     manager = context.Extensions()
     title = "RenderDoc MCP Auto Start"
-    path = _settings_path()
     try:
+        path = _settings_path()
         settings = _load_settings(path)
-        state = "on" if settings.get("auto_start") is True else "off"
-        buttons = qrd.DialogButton
-        prompt = (
-            "Start the MCP service automatically when RenderDoc opens?\n\n"
-            "Auto Start is currently {}. Changes apply the next time the extension loads."
-        ).format(state)
-        choice = manager.QuestionDialog(
-            prompt,
-            [buttons.Yes, buttons.No, buttons.Cancel],
-            title,
-        )
-        if choice in (buttons.Yes, buttons.No):
-            settings["auto_start"] = choice == buttons.Yes
-            _save_settings(path, settings)
+        settings["auto_start"] = enabled
+        _save_settings(path, settings)
     except OSError as error:
         manager.ErrorDialog("Could not update Auto Start.\n\n{}".format(error), title)
+        return
+
+    _update_auto_start_menu(context, enabled)
+    state = "on" if enabled else "off"
+    manager.MessageDialog(
+        "Auto Start is {}. This applies the next time the extension loads.".format(state),
+        title,
+    )
+
+
+def _enable_auto_start(context, data):
+    _set_auto_start(context, True)
+
+
+def _disable_auto_start(context, data):
+    _set_auto_start(context, False)
 
 
 def register(version, pyrenderdoc):
@@ -165,28 +196,23 @@ def register(version, pyrenderdoc):
     _service = ExtensionService(pyrenderdoc, _update_status)
     _install_status_widget(pyrenderdoc)
     manager = pyrenderdoc.Extensions()
-    manager.RegisterWindowMenu(
-        qrd.WindowMenu.Tools,
-        ["RenderDoc MCP", "Start"],
-        _start,
-    )
-    manager.RegisterWindowMenu(
-        qrd.WindowMenu.Tools,
-        ["RenderDoc MCP", "Stop"],
-        _stop,
-    )
-    manager.RegisterWindowMenu(
-        qrd.WindowMenu.Tools,
-        ["RenderDoc MCP", "Auto Start..."],
-        _configure_auto_start,
-    )
+
+    # RenderDoc sorts raw menu labels, including Qt mnemonic markers (&).
+    # Qt displays Start, Stop, Auto Start in that order, with On before Off.
+    for path, callback in (
+        (["&Start"], _start),
+        (["&Stop"], _stop),
+        ([_AUTO_START_MENU, _AUTO_START_ON], _enable_auto_start),
+        ([_AUTO_START_MENU, _AUTO_START_OFF], _disable_auto_start),
+    ):
+        manager.RegisterWindowMenu(qrd.WindowMenu.Tools, [_MENU_NAME] + path, callback)
 
     try:
         auto_start = _load_settings(_settings_path()).get("auto_start") is True
     except OSError as error:
         print("RenderDoc MCP could not check Auto Start: {}".format(error))
         auto_start = False
-
+    _update_auto_start_menu(pyrenderdoc, auto_start)
     if auto_start:
         _start(pyrenderdoc, None)
     else:
