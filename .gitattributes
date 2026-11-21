@@ -1,0 +1,9 @@
+# Keep development metadata and documentation out of the runtime release archive.
+.gitattributes export-ignore
+.gitignore export-ignore
+.github/** export-ignore
+*.md export-ignore
+__pycache__/** export-ignore
+*.pyc export-ignore
+*.pyo export-ignore
+*.zip export-ignore
